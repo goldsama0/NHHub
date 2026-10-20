@@ -1162,20 +1162,41 @@ end)
 
 -- ===== UI =====
 local Window = WindUI:CreateWindow({
-    Title = "Hot Egg",
-    Author = "toolkit v11",
+    Title = "NHHub",
     Icon = "egg",
-    Folder = "HotEggToolkit",
-    Size = UDim2.fromOffset(580, 560),
-    Theme = "Dark",
+    Folder = "NHHub",
+    Size = UDim2.fromOffset(600, 580),
+    Theme = "Violet",
     Transparent = true,
     ToggleKey = S.toggleKey,
 })
 
-local MainTab = Window:Tab({ Title = "Main", Icon = "gamepad-2" })
+-- One long Main tab was the main usability problem: Fly sat below twenty unrelated
+-- controls. Split by what you are doing at the time instead of by feature family.
+local EggTab = Window:Tab({ Title = "Egg", Icon = "egg" })
+local DuelTab = Window:Tab({ Title = "Duel", Icon = "swords" })
+local MoveTab = Window:Tab({ Title = "Move", Icon = "move" })
+local SettingsTab = Window:Tab({ Title = "Settings", Icon = "settings" })
 local StatusTab = Window:Tab({ Title = "Status", Icon = "activity" })
 
 -- ===== reopen button (fallback for the hotkey) =====
+-- Remove our own button from any earlier run. Only this one: the WindUI window belongs to the
+-- library and destroying it out from under a still-running copy breaks that copy.
+do
+    local roots = {}
+    local ok, hidden = pcall(function() return gethui() end)
+    if ok and hidden then table.insert(roots, hidden) end
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if playerGui then table.insert(roots, playerGui) end
+    for _, root in ipairs(roots) do
+        for _, child in ipairs(root:GetChildren()) do
+            if child:IsA("ScreenGui") and child.Name == "HotEggReopen" then
+                child:Destroy()
+            end
+        end
+    end
+end
+
 local gui = Instance.new("ScreenGui")
 gui.Name = "HotEggReopen"
 gui.ResetOnSpawn = false
@@ -1184,17 +1205,17 @@ pcall(function() gui.Parent = gethui() end)
 if not gui.Parent then gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local btn = Instance.new("TextButton")
-btn.Size = UDim2.fromOffset(74, 26)
-btn.Position = UDim2.new(1, -84, 0, 8)
-btn.BackgroundColor3 = Color3.fromRGB(28, 28, 34)
-btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+btn.Size = UDim2.fromOffset(84, 26)
+btn.Position = UDim2.new(1, -94, 0, 8)
+btn.BackgroundColor3 = Color3.fromRGB(24, 20, 38)
+btn.TextColor3 = Color3.fromRGB(237, 233, 254)
 btn.Font = Enum.Font.GothamBold
 btn.TextSize = 13
-btn.Text = "MENU"
+btn.Text = "NHHub"
 btn.AutoButtonColor = true
 btn.Parent = gui
 local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 6); corner.Parent = btn
-local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(90, 90, 110); stroke.Parent = btn
+local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(139, 92, 246); stroke.Parent = btn
 
 local function toggleWindow()
     local ok = pcall(function() Window:Toggle() end)
@@ -1211,6 +1232,7 @@ pcall(function() Window:SetToggleKey(S.toggleKey) end)
 local eggStatus = StatusTab:Paragraph({ Title = "Egg", Desc = "-" })
 local duelStatus = StatusTab:Paragraph({ Title = "Duel", Desc = "-" })
 local meStatus = StatusTab:Paragraph({ Title = "You", Desc = "-" })
+local recStatus = StatusTab:Paragraph({ Title = "Record", Desc = "-" })
 
 task.spawn(function()
     while true do
@@ -1231,192 +1253,200 @@ task.spawn(function()
                 tostring(GameState:GetAttribute("State")),
                 hum and tostring(hum.WalkSpeed) or "-",
                 tostring(S.autoPass), tostring(S.autoEvade)))
+            recStatus:SetDesc(string.format("landed %d  /  taken %d",
+                dbg.hitDealt or 0, dbg.hitTaken or 0))
         end)
     end
 end)
 
--- ===== controls =====
-MainTab:Toggle({
-    Title = "Auto Pass Egg",
-    Desc = "You hold it: teleports onto the nearest player and dwells so the touch registers.",
+-- ===== controls: Egg =====
+EggTab:Toggle({
+    Title = "Auto Pass",
+    Desc = "While you hold it: teleport onto the nearest player and stay long enough for the server to register the touch.",
     Icon = "egg",
     Value = false,
     Callback = function(state)
         S.autoPass = state
-        WindUI:Notify({ Title = "Auto Pass Egg", Content = state and "Armed - teleports onto players when you hold it" or "Off", Icon = "egg" })
+        WindUI:Notify({ Title = "Auto Pass", Content = state and "Armed - passes on touch" or "Off", Icon = "egg" })
     end,
 })
-MainTab:Dropdown({
-    Title = "Pass Method",
+EggTab:Dropdown({
+    Title = "Pass method",
     Values = { "Teleport", "Sprint" },
     Value = "Teleport",
     Callback = function(v)
         S.method = v
-        WindUI:Notify({ Title = "Pass Method", Content = v == "Teleport" and "Teleport + dwell" or "High-speed sprint", Icon = "zap" })
+        WindUI:Notify({ Title = "Pass method", Content = v == "Teleport" and "Teleport, then dwell" or "Sprint into them", Icon = "zap" })
     end,
 })
-MainTab:Slider({
-    Title = "Teleport Trigger Distance",
-    Desc = "Teleports when the target is further than this.",
+EggTab:Slider({
+    Title = "Pass trigger distance",
+    Desc = "Only closes the gap when the target is further away than this.",
     Value = { Min = 2, Max = 30, Default = 4 }, Step = 1, Flag = "passtrigger",
     Callback = function(v) S.passTrigger = v end,
 })
-MainTab:Slider({
-    Title = "Dwell Time (s)",
-    Desc = "How long to hold position so the server registers the touch.",
+EggTab:Slider({
+    Title = "Touch dwell (s)",
+    Desc = "How long you stand still on contact. Under about 0.15s the server ignores the touch.",
     Value = { Min = 0.1, Max = 1.0, Default = 0.3 }, Step = 0.05, Flag = "passdwell",
     Callback = function(v) S.passDwell = v end,
 })
-MainTab:Slider({
-    Title = "Fallback Sprint Speed",
-    Desc = "Used if the teleport touch doesn't take.",
+EggTab:Slider({
+    Title = "Sprint fallback speed",
+    Desc = "Used only if the teleport touch does not take.",
     Value = { Min = 20, Max = 200, Default = 110 }, Step = 5, Flag = "chasespeed",
     Callback = function(v) S.chaseSpeed = v end,
 })
 
-MainTab:Divider()
+EggTab:Divider()
 
-MainTab:Toggle({
-    Title = "Auto Evade Egg",
-    Desc = "You don't hold it: sprints away from whoever does.",
+EggTab:Toggle({
+    Title = "Auto Evade",
+    Desc = "While someone else holds it: walk away from the holder, never toward them.",
     Icon = "footprints",
     Value = false,
     Callback = function(state)
         S.autoEvade = state
-        WindUI:Notify({ Title = "Auto Evade", Content = state and "Sprinting away from the holder" or "Off", Icon = "footprints" })
+        WindUI:Notify({ Title = "Auto Evade", Content = state and "Moving away from the holder" or "Off", Icon = "footprints" })
     end,
 })
-MainTab:Slider({
-    Title = "Evade Speed (velocity)",
+EggTab:Slider({
+    Title = "Evade speed",
+    Desc = "Movement speed while evading. 16 is the game's own walk speed.",
     Value = { Min = 20, Max = 200, Default = 110 }, Step = 5, Flag = "evadespeed",
     Callback = function(v) S.evadeSpeed = v end,
 })
-MainTab:Slider({
-    Title = "Evade Distance",
-    Desc = "Starts running when the holder is closer than this.",
+EggTab:Slider({
+    Title = "Evade distance",
+    Desc = "Only starts moving once the holder is closer than this.",
     Value = { Min = 20, Max = 150, Default = 70 }, Step = 5, Flag = "evadedist",
     Callback = function(v) S.evadeDistance = v end,
 })
 
-MainTab:Divider()
+EggTab:Divider()
 
-MainTab:Toggle({
-    Title = "Auto Escape After Pass",
-    Desc = "Once you pass the egg, move to the furthest safe spot on the map so they can't pass it back.",
+EggTab:Toggle({
+    Title = "Auto Escape",
+    Desc = "After you pass: move to the furthest safe spot so they cannot hand it straight back.",
     Icon = "arrow-up-from-line",
     Value = false,
     Callback = function(state)
         S.autoEscape = state
-        WindUI:Notify({ Title = "Auto Escape", Content = state and "Passing then breaking away" or "Off", Icon = "arrow-up-from-line" })
+        WindUI:Notify({ Title = "Auto Escape", Content = state and "Breaking away after a pass" or "Off", Icon = "arrow-up-from-line" })
     end,
 })
 
-MainTab:Divider()
-
-MainTab:Toggle({
-    Title = "Legit Mode (no teleports, no speed boost)",
-    Desc = "ON by default. No CFrame position writes AND no velocity injection - you move at the game's own walk speed, like everyone else. This is what stops the removals.",
+-- ===== controls: Settings =====
+SettingsTab:Toggle({
+    Title = "Legit Mode",
+    Desc = "No teleports and no velocity injection at all - you move at the game's own walk speed. Slower, but there is nothing to flag.",
     Icon = "shield-check",
     Value = false,
     Callback = function(state)
         S.safeMode = state
         WindUI:Notify({
             Title = "Legit Mode",
-            Content = state and "No teleports, no speed boost - slower but safer" or "Full speed + teleports (can be flagged)",
+            Content = state and "No teleports, no speed boost" or "Full speed and teleports",
             Icon = "shield-check",
         })
     end,
 })
 
-MainTab:Toggle({
-    Title = "Ground Guard (no falling)",
-    Desc = "Checks the floor ahead and rescues you if you drop below the arena.",
+-- ===== controls: Move =====
+MoveTab:Toggle({
+    Title = "Ground Guard",
+    Desc = "Checks the floor ahead and pulls you back if you are about to drop off the map.",
     Icon = "shield",
     Value = true,
     Callback = function(state) S.groundGuard = state end,
 })
 
-MainTab:Divider()
-
-MainTab:Toggle({
-    Title = "Auto Kill (win duel)",
-    Desc = "Final duel only: auto-push (Sumo) or auto-throw egg (Egg Throw).",
+-- ===== controls: Duel =====
+DuelTab:Toggle({
+    Title = "Auto Kill",
+    Desc = "Final duel only: pushes in Sumo, throws in Egg.",
     Icon = "swords",
     Value = false,
     Callback = function(state)
         S.autoKill = state
-        WindUI:Notify({ Title = "Auto Kill", Content = state and "Armed - fires in the final duel" or "Off", Icon = "swords" })
+        WindUI:Notify({ Title = "Auto Kill", Content = state and "Armed for the duel" or "Off", Icon = "swords" })
     end,
 })
-MainTab:Toggle({
-    Title = "Auto Dodge (hard to hit)",
-    Desc = "Duel only: circle-strafe and juke so their throws miss. Sumo keeps you out of reach.",
+DuelTab:Toggle({
+    Title = "Auto Dodge",
+    Desc = "Keep moving so their attacks miss instead of standing in range.",
     Icon = "wind",
     Value = false,
     Callback = function(state)
         S.autoDodge = state
-        WindUI:Notify({ Title = "Auto Dodge", Content = state and "Circling and juking in duels" or "Off", Icon = "wind" })
+        WindUI:Notify({ Title = "Auto Dodge", Content = state and "Dodging on" or "Off", Icon = "wind" })
     end,
 })
-MainTab:Slider({
-    Title = "Dodge Standoff",
-    Desc = "How far to stay from the opponent. The ring is 19.2 studs, so keep this under 16.",
+DuelTab:Slider({
+    Title = "Dodge standoff",
+    Desc = "Distance held from the opponent. The ring is 19.2 studs, so keep this under 16.",
     Value = { Min = 8, Max = 16, Default = 13 }, Step = 1, Flag = "dodgeradius",
     Callback = function(v) S.dodgeRadius = v end,
 })
-MainTab:Toggle({
-    Title = "Sumo: hop behind them",
-    Desc = "Duel Sumo: hops to the centre side of the opponent so the push sends them outward.",
+
+DuelTab:Divider()
+
+DuelTab:Toggle({
+    Title = "Sumo - hop behind",
+    Desc = "Hops to the centre side of them so the push carries them outward.",
     Icon = "move",
     Value = true,
     Callback = function(state)
         S.sumoTeleport = state
-        WindUI:Notify({ Title = "Sumo Hop", Content = state and "Teleports inside them before pushing" or "Off - walks instead", Icon = "move" })
+        WindUI:Notify({ Title = "Sumo hop", Content = state and "Hopping behind before the push" or "Off - walks into them", Icon = "move" })
     end,
 })
-MainTab:Slider({
-    Title = "Sumo Hop Distance",
-    Desc = "Longest hop used to get behind them. Lower is safer.",
+DuelTab:Slider({
+    Title = "Sumo hop distance",
+    Desc = "Longest hop used to get behind them. Smaller is less obvious.",
     Value = { Min = 4, Max = 16, Default = 10 }, Step = 1, Flag = "sumojump",
     Callback = function(v) S.sumoJump = v end,
 })
-MainTab:Toggle({
-    Title = "Egg: hop behind them",
-    Desc = "Duel Egg Throw: teleports behind the opponent before throwing instead of standing still at range.",
+
+DuelTab:Divider()
+
+DuelTab:Toggle({
+    Title = "Egg - hop behind",
+    Desc = "Teleports behind them before throwing instead of standing at range.",
     Icon = "move",
     Value = true,
     Callback = function(state)
         S.eggTeleport = state
-        WindUI:Notify({ Title = "Egg Hop", Content = state and "Hops behind them to throw" or "Off - throws from where it stands", Icon = "move" })
+        WindUI:Notify({ Title = "Egg hop", Content = state and "Hopping behind to throw" or "Off - throws from where it stands", Icon = "move" })
     end,
 })
-MainTab:Slider({
-    Title = "Egg Hop Standoff",
-    Desc = "How far behind them to land. Closer means a flatter, more accurate throw.",
+DuelTab:Slider({
+    Title = "Egg hop standoff",
+    Desc = "How far behind them to land. Closer is a flatter, more accurate throw.",
     Value = { Min = 4, Max = 16, Default = 6 }, Step = 1, Flag = "eggstandoff",
     Callback = function(v) S.eggStandoff = v end,
 })
-MainTab:Slider({
-    Title = "Aim Lead",
-    Desc = "How far ahead of a moving target to aim. Higher tracks runners, lower is safer against juking.",
+DuelTab:Slider({
+    Title = "Aim lead",
+    Desc = "Extra prediction on top of the solved intercept. Higher tracks runners, lower punishes juking.",
     Value = { Min = 0, Max = 10, Default = 4 }, Step = 0.5, Flag = "egglead",
     Callback = function(v) S.eggMaxLead = v end,
 })
-MainTab:Toggle({
-    Title = "Egg: walk sideways to dodge",
-    Desc = "Egg duel: keeps walking laterally so their egg misses. Normal walk speed, so it cannot be flagged as speed.",
+DuelTab:Toggle({
+    Title = "Egg - strafe",
+    Desc = "Walks sideways so their egg misses. Normal walk speed, so it never reads as speed.",
     Icon = "wind",
     Value = true,
     Callback = function(state)
         S.eggStrafe = state
-        WindUI:Notify({ Title = "Egg Strafe", Content = state and "Always moving sideways" or "Off - stands still", Icon = "wind" })
+        WindUI:Notify({ Title = "Egg strafe", Content = state and "Always moving sideways" or "Off - stands still", Icon = "wind" })
     end,
 })
 
-MainTab:Divider()
+SettingsTab:Divider()
 
-MainTab:Dropdown({
-    Title = "UI Hotkey", Values = { "RightShift", "RightControl", "K", "P", "F1", "Insert" }, Value = "RightShift",
+SettingsTab:Dropdown({
+    Title = "Menu hotkey", Values = { "RightShift", "RightControl", "K", "P", "F1", "Insert" }, Value = "RightShift",
     Callback = function(v)
         local map = { RightShift = Enum.KeyCode.RightShift, RightControl = Enum.KeyCode.RightControl,
                       K = Enum.KeyCode.K, P = Enum.KeyCode.P, F1 = Enum.KeyCode.F1, Insert = Enum.KeyCode.Insert }
@@ -1428,33 +1458,34 @@ MainTab:Dropdown({
     end,
 })
 
-MainTab:Divider()
+MoveTab:Divider()
 
-MainTab:Dropdown({
-    Title = "Fly Method", Values = { "Physics", "CFrame" }, Value = "Physics",
+MoveTab:Dropdown({
+    Title = "Fly method", Values = { "Physics", "CFrame" }, Value = "Physics",
     Callback = function(v) S.flyMethod = v if S.fly then stopFly() end end,
 })
-MainTab:Toggle({
-    Title = "Fly", Desc = "WASD + Space/Ctrl",
+MoveTab:Toggle({
+    Title = "Fly", Desc = "WASD to move, Space up, Ctrl down.",
     Icon = "bird", Value = false,
     Callback = function(state)
         if state then if not startFly() then return end else stopFly() end
     end,
 })
-MainTab:Slider({
-    Title = "Fly Speed", Value = { Min = 10, Max = 150, Default = 55 }, Step = 5, Flag = "flyspeed",
+MoveTab:Slider({
+    Title = "Fly speed", Value = { Min = 10, Max = 150, Default = 55 }, Step = 5, Flag = "flyspeed",
     Callback = function(v) S.flySpeed = v end,
 })
-MainTab:Slider({
-    Title = "Fly Smoothing", Value = { Min = 0.03, Max = 1.0, Default = 0.25 }, Step = 0.01, Flag = "smooth",
+MoveTab:Slider({
+    Title = "Fly smoothing", Desc = "Lower is snappier, higher is smoother.",
+    Value = { Min = 0.03, Max = 1.0, Default = 0.25 }, Step = 0.01, Flag = "smooth",
     Callback = function(v) S.smooth = v end,
 })
 
-MainTab:Divider()
+MoveTab:Divider()
 
 local tpDD
-tpDD = MainTab:Dropdown({
-    Title = "Teleport Target", Values = playerNames(), AllowNone = true,
+tpDD = MoveTab:Dropdown({
+    Title = "Teleport to player", Values = playerNames(), AllowNone = true,
     Callback = function(v) S.teleportTarget = v end,
 })
 
@@ -1464,4 +1495,4 @@ end
 Players.PlayerAdded:Connect(function() task.wait(1) refresh() end)
 Players.PlayerRemoving:Connect(refresh)
 
-WindUI:Notify({ Title = "Hot Egg toolkit v11", Content = "Teleport pass with jump cap + break-away escape. RightShift or MENU to open.", Duration = 7, Icon = "egg" })
+WindUI:Notify({ Title = "NHHub", Content = "RightShift or the NHHub button opens the menu.", Duration = 7, Icon = "egg" })
