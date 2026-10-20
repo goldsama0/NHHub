@@ -6,6 +6,27 @@
      - Ground Guard : raycasts the floor so you never jump or run into the void.
      - Auto Kill    : duel auto-win (Sumo push / Egg Throw).
      - RightShift or the MENU button to open. ]]
+--[[ Each run of this script loads its own copy of WindUI, and every copy builds a fresh ScreenGui.
+     live-reload stops the old script but leaves the old GUI standing, so without this every reload
+     stacks another full window and another button. Done before the library is loaded, so the new
+     copy never inherits a GUI it did not create. ]]
+do
+    local roots = {}
+    local okHidden, hidden = pcall(gethui)
+    if okHidden and hidden then table.insert(roots, hidden) end
+    local playerGui = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+    if playerGui then table.insert(roots, playerGui) end
+    for _, root in ipairs(roots) do
+        for _, child in ipairs(root:GetChildren()) do
+            local name = child.Name
+            if child:IsA("ScreenGui")
+                and (name == "HotEggReopen" or name == "WindUI" or string.sub(name, 1, 7) == "WindUI/") then
+                child:Destroy()
+            end
+        end
+    end
+end
+
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
 local Players = game:GetService("Players")
@@ -1166,7 +1187,7 @@ local Window = WindUI:CreateWindow({
     Icon = "egg",
     Folder = "NHHub",
     Size = UDim2.fromOffset(600, 580),
-    Theme = "Violet",
+    Theme = "Dark",
     Transparent = true,
     ToggleKey = S.toggleKey,
 })
@@ -1175,28 +1196,91 @@ local Window = WindUI:CreateWindow({
 -- controls. Split by what you are doing at the time instead of by feature family.
 local EggTab = Window:Tab({ Title = "Egg", Icon = "egg" })
 local DuelTab = Window:Tab({ Title = "Duel", Icon = "swords" })
-local MoveTab = Window:Tab({ Title = "Move", Icon = "move" })
-local SettingsTab = Window:Tab({ Title = "Settings", Icon = "settings" })
-local StatusTab = Window:Tab({ Title = "Status", Icon = "activity" })
+local MoveTab = Window:Tab({ Title = "Move", Icon = "rocket" })
+local SettingsTab = Window:Tab({ Title = "Settings", Icon = "sliders-horizontal" })
+local StatusTab = Window:Tab({ Title = "Status", Icon = "gauge" })
 
--- ===== reopen button (fallback for the hotkey) =====
--- Remove our own button from any earlier run. Only this one: the WindUI window belongs to the
--- library and destroying it out from under a still-running copy breaks that copy.
-do
+-- WindUI only reveals a tab's contents once something calls SelectTab - creating a tab does not
+-- select it, so without this the window opens with an empty right-hand side until you click a tab.
+pcall(function() Window:SelectTab(1) end)
+
+--[[ Two things the library will not do for us. First, the theme's window plate is only 85% opaque,
+     so the arena shows through and the controls are hard to read against a bright map - repaint it
+     solid. Second, the title is drawn at a fixed size with no option to change it, and its holder is
+     sized to that small text, so widen the holder as well as raising the font or the name is clipped.
+     Retried briefly because CreateWindow builds the topbar asynchronously. ]]
+local function styleWindow()
     local roots = {}
-    local ok, hidden = pcall(function() return gethui() end)
-    if ok and hidden then table.insert(roots, hidden) end
+    local okHidden, hidden = pcall(gethui)
+    if okHidden and hidden then table.insert(roots, hidden) end
     local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
     if playerGui then table.insert(roots, playerGui) end
+
     for _, root in ipairs(roots) do
-        for _, child in ipairs(root:GetChildren()) do
-            if child:IsA("ScreenGui") and child.Name == "HotEggReopen" then
-                child:Destroy()
+        local win = root:FindFirstChild("WindUI")
+        local frame = win and win:FindFirstChild("Window") and win.Window:FindFirstChild("Frame")
+        if frame then
+            local plate = frame:FindFirstChild("Background")
+            if plate and plate:IsA("ImageLabel") and not frame:FindFirstChild("NHHubFill") then
+                -- The theme re-applies its own transparency every time the window opens, and the
+                -- theme's plate is a sliced image that leaves the body see-through. Paint a plain
+                -- solid panel just above the plate and below the window contents (Main sits at 97).
+                local fill = Instance.new("Frame")
+                fill.Name = "NHHubFill"
+                fill.Size = plate.Size
+                fill.Position = plate.Position
+                fill.AnchorPoint = plate.AnchorPoint
+                fill.BackgroundColor3 = Color3.fromRGB(16, 16, 21)
+                fill.BackgroundTransparency = 0
+                fill.BorderSizePixel = 0
+                fill.ZIndex = 2
+                fill.Active = false
+
+                local corner = Instance.new("UICorner")
+                corner.CornerRadius = UDim.new(0, 12)
+                corner.Parent = fill
+
+                local stroke = Instance.new("UIStroke")
+                stroke.Color = Color3.fromRGB(46, 46, 60)
+                stroke.Thickness = 1
+                stroke.Transparency = 0.25
+                stroke.Parent = fill
+
+                fill.Parent = frame
             end
+
+            local title
+            for _, obj in ipairs(frame:GetDescendants()) do
+                if obj:IsA("TextLabel") and obj.Text == "NHHub" then
+                    title = obj
+                    break
+                end
+            end
+            if title then
+                title.TextSize = 28
+                title.TextYAlignment = Enum.TextYAlignment.Center
+                local holder = title.Parent
+                if holder and holder:IsA("GuiObject") then
+                    holder.Size = UDim2.fromOffset(150, 28)
+                    local group = holder.Parent
+                    if group and group:IsA("GuiObject") then
+                        group.Size = UDim2.fromOffset(186, 28)
+                    end
+                end
+            end
+            return true
         end
     end
+    return false
 end
+task.spawn(function()
+    for _ = 1, 25 do
+        if styleWindow() then return end
+        task.wait(0.1)
+    end
+end)
 
+-- ===== reopen button (fallback for the hotkey) =====
 local gui = Instance.new("ScreenGui")
 gui.Name = "HotEggReopen"
 gui.ResetOnSpawn = false
@@ -1272,6 +1356,7 @@ EggTab:Toggle({
 })
 EggTab:Dropdown({
     Title = "Pass method",
+    Icon = "route",
     Values = { "Teleport", "Sprint" },
     Value = "Teleport",
     Callback = function(v)
@@ -1281,18 +1366,21 @@ EggTab:Dropdown({
 })
 EggTab:Slider({
     Title = "Pass trigger distance",
+    Icon = "ruler",
     Desc = "Only closes the gap when the target is further away than this.",
     Value = { Min = 2, Max = 30, Default = 4 }, Step = 1, Flag = "passtrigger",
     Callback = function(v) S.passTrigger = v end,
 })
 EggTab:Slider({
     Title = "Touch dwell (s)",
+    Icon = "timer",
     Desc = "How long you stand still on contact. Under about 0.15s the server ignores the touch.",
     Value = { Min = 0.1, Max = 1.0, Default = 0.3 }, Step = 0.05, Flag = "passdwell",
     Callback = function(v) S.passDwell = v end,
 })
 EggTab:Slider({
     Title = "Sprint fallback speed",
+    Icon = "gauge",
     Desc = "Used only if the teleport touch does not take.",
     Value = { Min = 20, Max = 200, Default = 110 }, Step = 5, Flag = "chasespeed",
     Callback = function(v) S.chaseSpeed = v end,
@@ -1312,12 +1400,14 @@ EggTab:Toggle({
 })
 EggTab:Slider({
     Title = "Evade speed",
+    Icon = "gauge",
     Desc = "Movement speed while evading. 16 is the game's own walk speed.",
     Value = { Min = 20, Max = 200, Default = 110 }, Step = 5, Flag = "evadespeed",
     Callback = function(v) S.evadeSpeed = v end,
 })
 EggTab:Slider({
     Title = "Evade distance",
+    Icon = "crosshair",
     Desc = "Only starts moving once the holder is closer than this.",
     Value = { Min = 20, Max = 150, Default = 70 }, Step = 5, Flag = "evadedist",
     Callback = function(v) S.evadeDistance = v end,
@@ -1384,6 +1474,7 @@ DuelTab:Toggle({
 })
 DuelTab:Slider({
     Title = "Dodge standoff",
+    Icon = "circle-dot",
     Desc = "Distance held from the opponent. The ring is 19.2 studs, so keep this under 16.",
     Value = { Min = 8, Max = 16, Default = 13 }, Step = 1, Flag = "dodgeradius",
     Callback = function(v) S.dodgeRadius = v end,
@@ -1403,6 +1494,7 @@ DuelTab:Toggle({
 })
 DuelTab:Slider({
     Title = "Sumo hop distance",
+    Icon = "ruler",
     Desc = "Longest hop used to get behind them. Smaller is less obvious.",
     Value = { Min = 4, Max = 16, Default = 10 }, Step = 1, Flag = "sumojump",
     Callback = function(v) S.sumoJump = v end,
@@ -1422,12 +1514,14 @@ DuelTab:Toggle({
 })
 DuelTab:Slider({
     Title = "Egg hop standoff",
+    Icon = "ruler",
     Desc = "How far behind them to land. Closer is a flatter, more accurate throw.",
     Value = { Min = 4, Max = 16, Default = 6 }, Step = 1, Flag = "eggstandoff",
     Callback = function(v) S.eggStandoff = v end,
 })
 DuelTab:Slider({
     Title = "Aim lead",
+    Icon = "target",
     Desc = "Extra prediction on top of the solved intercept. Higher tracks runners, lower punishes juking.",
     Value = { Min = 0, Max = 10, Default = 4 }, Step = 0.5, Flag = "egglead",
     Callback = function(v) S.eggMaxLead = v end,
@@ -1446,7 +1540,7 @@ DuelTab:Toggle({
 SettingsTab:Divider()
 
 SettingsTab:Dropdown({
-    Title = "Menu hotkey", Values = { "RightShift", "RightControl", "K", "P", "F1", "Insert" }, Value = "RightShift",
+    Title = "Menu hotkey", Icon = "keyboard", Values = { "RightShift", "RightControl", "K", "P", "F1", "Insert" }, Value = "RightShift",
     Callback = function(v)
         local map = { RightShift = Enum.KeyCode.RightShift, RightControl = Enum.KeyCode.RightControl,
                       K = Enum.KeyCode.K, P = Enum.KeyCode.P, F1 = Enum.KeyCode.F1, Insert = Enum.KeyCode.Insert }
@@ -1461,7 +1555,7 @@ SettingsTab:Dropdown({
 MoveTab:Divider()
 
 MoveTab:Dropdown({
-    Title = "Fly method", Values = { "Physics", "CFrame" }, Value = "Physics",
+    Title = "Fly method", Icon = "compass", Values = { "Physics", "CFrame" }, Value = "Physics",
     Callback = function(v) S.flyMethod = v if S.fly then stopFly() end end,
 })
 MoveTab:Toggle({
@@ -1472,11 +1566,11 @@ MoveTab:Toggle({
     end,
 })
 MoveTab:Slider({
-    Title = "Fly speed", Value = { Min = 10, Max = 150, Default = 55 }, Step = 5, Flag = "flyspeed",
+    Title = "Fly speed", Icon = "gauge", Value = { Min = 10, Max = 150, Default = 55 }, Step = 5, Flag = "flyspeed",
     Callback = function(v) S.flySpeed = v end,
 })
 MoveTab:Slider({
-    Title = "Fly smoothing", Desc = "Lower is snappier, higher is smoother.",
+    Title = "Fly smoothing", Icon = "wind", Desc = "Lower is snappier, higher is smoother.",
     Value = { Min = 0.03, Max = 1.0, Default = 0.25 }, Step = 0.01, Flag = "smooth",
     Callback = function(v) S.smooth = v end,
 })
@@ -1485,7 +1579,7 @@ MoveTab:Divider()
 
 local tpDD
 tpDD = MoveTab:Dropdown({
-    Title = "Teleport to player", Values = playerNames(), AllowNone = true,
+    Title = "Teleport to player", Icon = "map-pin", Values = playerNames(), AllowNone = true,
     Callback = function(v) S.teleportTarget = v end,
 })
 
